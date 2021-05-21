@@ -1,6 +1,0 @@
----
-stack_name: {{ 'network-' + var.environment }}
-template_path: network.yaml
-parameters:
-  VpcCidr: '{{ var.vpc_cidr }}'
-  Environment: '{{ var.environment }}'

@@ -1,0 +1,15 @@
+---
+stack_name: {{ 'challengeApp-' + var.environment }}
+template_path: app.yaml
+
+parameters:
+  Env: '{{ var.environment }}'
+  VpcCidr: '{{ var.vpc_cidr }}'
+  AmiId: '{{ var.ami_id }}'
+  DbName: '{{ var.db_name }}'
+  DbPassword: '{{ var.db_password }}'
+  DbHost: '{{ var.db_host }}'
+
+dependencies:
+  - 'dev/load-balancer.yaml'
+  - 'dev/db.yaml'

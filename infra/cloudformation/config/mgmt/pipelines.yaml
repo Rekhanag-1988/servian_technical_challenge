@@ -1,0 +1,6 @@
+---
+stack_name: {{ 'codepipeline-' + var.environment }}
+template_path: mgmt/workload-pipeline.yaml
+
+dependencies:
+  - 'mgmt/vpc.yaml'

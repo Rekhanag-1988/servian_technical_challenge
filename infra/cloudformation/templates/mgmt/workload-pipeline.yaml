@@ -1,0 +1,370 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates the application deployment lifecycle pipelines
+
+## Stack Parameters
+Parameters:
+  ApplicationName:
+    Description: Application name to be deployed (Required)
+    Type: String
+    Default: ServianTechChallenge
+
+  BuildRequired:
+    Description: Whether to build AMI or not (Required)
+    Type: String
+    Default: true
+
+  RepositoryName:
+    Description: The name of the code repository
+    Type: String
+    Default: servian_technical_challenge
+
+  RepositoryBranchName:
+    Description: The name of the branch of the code repository
+    Type: String
+    Default: development
+
+  RepositoryURL:
+    Description: The URL of the code repository
+    Type: String
+    Default: https://github.com/Rekhanag-1988/servian_technical_challenge.git
+
+  BuildImage:
+    Description: The location of the docker image that will perform the build
+    Type: String
+    Default: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+
+  AppVersion:
+    Description: Application version to build the AMI (Required)
+    Type: String
+    Default: 123
+
+  ProdChangeRecord:
+    Description: Change record for prod environment deployment (Required)
+    Type: String
+    Default: 123
+
+Conditions:
+  IsMasterBranch: !Equals [!Ref RepositoryBranchName, master]
+  IsDevBranch: !Equals [!Ref RepositoryBranchName, development]
+  IsBuildRequired: !Not [!Equals [!Ref RepositoryBranchName, master]]
+
+## Stack Resources
+Resources:
+  CodeBuildLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/servian-CodeBuildLogs/${AWS::StackName}"
+      RetentionInDays: !If [ IsDevBranch, 14, 90 ]
+
+  CodeBuildBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-AMI-Builder"
+      Description: Builds application's AMI using HashiCorp Packer
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: REPO_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: VPCID
+            Value: 
+              "Fn::ImportValue": "mgmt-vpc"
+          - Name: SUBNET_ID
+            Value: 
+              "Fn::ImportValue": "mgmt-vpc-SubnetCICDA"
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: APP_VERSION
+            Value: !Ref AppVersion
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
+      Source:
+        Auth:
+          Type: OAUTH
+        Location: !Ref RepositoryURL
+        Type: GITHUB
+        BuildSpec: infra/buildspecs/ami-builder.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": "mgmt-vpc-CICDSubnetsEc2SecurityGroup"
+        Subnets: 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDA"
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDB" 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDC"
+        VpcId: 
+          "Fn::ImportValue": "mgmt-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: AMI-Builder
+
+  ManualApprovalSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Manual Approval For Change Controlled Environments.
+      TopicName: !Sub "Pipeline-Manual-Approval-${RepositoryBranchName}"
+      Subscription:
+        - Endpoint: rekhanagy1@gmail.com
+          Protocol: email
+
+  CodeBuildDeploy:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-Deploy"
+      Description: Deploys Both Infrastructure And Application CloudFormation Stacks On To A Given Workload Environment
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: APP_VERSION
+            Value: !Ref AppVersion
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+          - Name: PRD_CHANGE_REQUEST
+            Value: !Ref ProdChangeRecord
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
+      Source:
+        Auth:
+          Type: OAUTH
+        Location: !Ref RepositoryURL
+        Type: GITHUB
+        BuildSpec: infra/buildspecs/application-deploy.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": "mgmt-vpc-CICDSubnetsEc2SecurityGroup"
+        Subnets: 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDA"
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDB" 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDC"
+        VpcId: 
+          "Fn::ImportValue": "mgmt-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: Deploy
+
+
+  CodeBuildTest:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-TestApplication"
+      Description: Execuetes test cases
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
+      Source:
+        Auth:
+          Type: OAUTH
+        Location: !Ref RepositoryURL
+        Type: GITHUB
+        BuildSpec: infra/buildspecs/application-test.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": "mgmt-vpc-CICDSubnetsEc2SecurityGroup"
+        Subnets: 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDA"
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDB" 
+          - "Fn::ImportValue": "mgmt-vpc-SubnetCICDC"
+        VpcId: 
+          "Fn::ImportValue": "mgmt-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: Test
+
+  CodeBuildRelease:
+    Type: AWS::CodeBuild::Project
+    Condition: IsDevBranch
+    Properties:
+      Name: !Sub "${AWS::StackName}-ReleaseAMI"
+      Description: Stores AMI-ID in parameter-store post successful application testing.
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
+      Source:
+        Auth:
+          Type: OAUTH
+        Location: !Ref RepositoryURL
+        Type: GITHUB
+        BuildSpec: infra/buildspecs/release-ami.yaml
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: AMI-Release
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: App-Deploy-Development
+      RestartExecutionOnUpdate: False
+      ArtifactStore:
+        Location: servian-codepipeline-artifacts
+        Type: S3
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              Namespace: SourceVariables
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: 'arn:aws:codestar-connections:ap-southeast-2:047276474071:connection/2de84993-792d-434e-ab79-c5859a70f524'
+                FullRepositoryId: 'Rekhanag-1988/servian_technical_challenge'
+                BranchName: development
+              OutputArtifacts:
+                - Name: SourceCode
+        - Name: Formulate-AMI
+          Actions:
+            - Name: Build
+              Namespace: BuildVariables
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildBuild
+                PrimarySource: SourceCode/AWS/buildspecs
+                EnvironmentVariables: "[{\"name\":\"COMMIT_ID\",\"value\":\"#{SourceVariables.CommitId}\",\"type\":\"PLAINTEXT\"}]"
+              InputArtifacts:
+                - Name: SourceCode
+              OutputArtifacts:
+                - Name: Build
+        
+        - !If # Sandbox deployment will happen for every feature branch
+          - IsDevBranch
+          - Name: Dev-Deployment
+            Actions:
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 1
+
+              - Name: TEST
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildTest
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[{\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 2
+
+              - Name: RELEASE
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildRelease
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 3
+
+          - !Ref AWS::NoValue
+
+        - !If # Production deployment post Manual approval
+          - IsMasterBranch
+          - Name: Production-Deployment
+            Actions:
+              - Name: MANUAL-APPROVAL
+                ActionTypeId:
+                  Category: Approval
+                  Owner: AWS
+                  Provider: Manual
+                  Version: '1'
+                Configuration:
+                  NotificationArn: !Ref ManualApprovalSNSTopic
+                  CustomData: !Sub "Approval Request For ${ApplicationName} Deployment In Prod Environment."
+                RunOrder: 1
+
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"prod\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 2
+          - !Ref AWS::NoValue
+
+
+Outputs:
+  CodePipelineName:
+    Value: !Ref CodePipeline
+    Description: Name of the pipeline
