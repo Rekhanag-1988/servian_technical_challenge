@@ -1,0 +1,63 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC Network Configuration'
+
+## Stack Parameters
+Parameters:
+  VpcCidr:
+    Description: VPC CIDR block
+    Type: String
+
+  Environment:
+    Description: VPC environment (dev/prod)
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag
+
+Resources:
+  Vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      InstanceTenancy: default
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      Tags:
+        - Key: Name
+          Value: !Sub 'servian-${Environment}-vpc'
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags:
+        - Key: Name
+          Value: !Sub 'servian-${Environment}-internetgateway'
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub '${Environment}-vpc'
+
+  IgwId:
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub '${Environment}-IgwId'

@@ -1,0 +1,9 @@
+---
+stack_name: {{ 'alb-' + var.environment }}
+template_path: alb.yaml
+
+parameters:
+  Environment: '{{ var.environment }}'
+
+dependencies:
+  - 'dev/subnets.yaml'

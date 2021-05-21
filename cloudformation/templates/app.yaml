@@ -1,0 +1,252 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Application Stack Configuration"
+
+Parameters:
+  VpcCidr:
+    Description: VPC CIDR block
+    Type: String 
+
+  AppName:
+    Default: ServianTechChallenge
+    Description: Application name
+    Type: String
+
+  AppListenPort:
+    Default: 3000
+    Description: Application serving port
+    Type: String   
+
+  AmiId:
+    Description: Application SOE ID
+    Type: String  
+
+  SpotPrice:
+    Default: '0.111'
+    Description: Spot bid price, please refer https://aws.amazon.com/ec2/pricing/on-demand/. Leave it blank if use on-demand
+    Type: String  
+
+  Env:
+    Description: Workload Environment (dev/prod)
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag
+  
+  ClusterNodeInstanceType:
+    Default: t2.micro
+    Description: Instance type for the cluster application nodes.
+    Type: String
+  
+  ClusterNodeVolumeSize:
+    Default: 50
+    Description: Size of cluster node root volume in Gb (note - size based upon Application indexes x 4)
+    Type: Number
+
+  InstancePurchaseOption:
+    Description: 'EC2 Instance Purchasing options.'
+    Type: String
+    Default: String
+
+  NodeType:
+    Description: Number of EC2 Instances to be created for the given application.
+    Type: String
+    Default: 'Single'
+
+Conditions:
+  MultiNode:
+    !Equals [!Ref NodeType, 'Multiple']
+
+Resources:
+  AppClusterNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+                      
+  AppClusterNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref AppClusterNodeRole]
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !If [ MultiNode, 2, 1]
+      LaunchConfigurationName: !Ref AppClusterNodeLaunchConfig
+      MinSize: !If [ MultiNode, 2, 1]
+      MaxSize: !If [ MultiNode, 4, 1]
+      TargetGroupARNs: [!Ref AppTargetGroup]
+      VPCZoneIdentifier:
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Env}-vpc", SubnetApplicationA ] ] 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Env}-vpc", SubnetApplicationB ] ] 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Env}-vpc", SubnetApplicationC ] ] 
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-${Env}-ASG"
+          PropagateAtLaunch: true              
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: "1"
+        MinInstancesInService: !If [ MultiNode, 2, 1 ]
+        PauseTime: PT15M
+
+  AppClusterNodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            seed_db_data:
+              command: "./app-source/TechChallengeApp updatedb -s"
+
+            serve_request:
+              command: "./app-source/TechChallengeApp server &"
+
+    Properties:
+      AssociatePublicIpAddress: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref ClusterNodeVolumeSize
+            Encrypted: true
+        - DeviceName: /dev/xvdf
+          NoDevice: true
+      IamInstanceProfile: !Ref AppClusterNodeInstanceProfile
+      ImageId: !Ref AmiId
+      InstanceType: !Ref ClusterNodeInstanceType
+      SecurityGroups: 
+         - "Fn::ImportValue": !Join [ "-", [ !Sub "${Env}-vpc", ApplicationSubnetsEc2SecurityGroup ] ]
+      UserData:
+        Fn::Base64:
+          !Join
+            - ""
+            -
+              - "#!/bin/bash -xe\n"
+              - !Sub ["/opt/aws/bin/cfn-init -v --stack ${StackName}", StackName: !Ref "AWS::StackName"]
+              - !Sub [" --resource AppClusterNodeLaunchConfig --region ${Region}\n", Region: !Ref "AWS::Region"]
+              - !Sub ["/opt/aws/bin/cfn-signal -e $? --stack ${StackName}", StackName: !Ref "AWS::StackName"]
+              - !Sub [" --resource AppClusterNodeLaunchConfig --region ${Region}", Region: !Ref "AWS::Region"]
+
+  AppClusterNodeScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      Cooldown: '600'
+      ScalingAdjustment: 1
+
+  AppClusterNodeScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      Cooldown: '600'
+      ScalingAdjustment: -1
+
+  AppCPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale up if CPU > 70% for 5 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 70
+      AlarmActions: [!Ref AppClusterNodeScaleUpPolicy]
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+
+  AppCPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale down if CPU < 40% for 30 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 30
+      Threshold: 40
+      AlarmActions: [!Ref AppClusterNodeScaleDownPolicy]
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AppAutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+
+  # App target group
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: !Ref AppListenPort
+      Protocol: HTTP
+      VpcId:
+        "Fn::ImportValue": !Sub "${Env}-vpc"
+      HealthCheckIntervalSeconds: 10
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      HealthCheckPath: '/healthcheck/'
+      HealthCheckPort: !Ref AppListenPort
+      HealthCheckProtocol: HTTP
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: load_balancing.algorithm.type
+          Value: least_outstanding_requests  
+      Tags:
+        - Key: Name
+          Value: !Sub "${AppName}-target-group"            
+
+  LoadBalancerHTTPListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties: 
+      Actions: 
+          - Type: forward
+            TargetGroupArn: !Ref AppTargetGroup
+      Conditions:
+        - Field: http-request-method
+          HttpRequestMethodConfig:
+            Values:
+              - GET_OR_HEAD
+      ListenerArn: 
+        "Fn::ImportValue": !Join ["-", [!Sub "${Env}-vpc", AlbHttpArn]]
+      Priority: 2
+
+  # LoadBalancerCname:
+  #   Type: AWS::Route53::RecordSet
+  #   Properties:
+  #     HostedZoneId:
+  #       "Fn::ImportValue": !Sub "cdt-${Env}-SubdomainDnsId"
+  #     Comment: Route53 cname for the ALB
+  #     Name: !Sub "${AppName}.${Env}.${ParentHostedZoneName}"
+  #     Type: CNAME
+  #     TTL: '900'
+  #     ResourceRecords:
+  #       - "Fn::ImportValue": !Join ["-", [!Sub "cdt-${Env}-vpc", AlbDns]]
+
+
+Outputs:
+  AppAutoScalingGroup:
+    Description: The name of the auto scaling group of Jira cluster on-demand instance nodes
+    Value: !Ref AppAutoScalingGroup
+    Export:
+      Name: !Sub "AppAutoScalingGroup-${Env}"

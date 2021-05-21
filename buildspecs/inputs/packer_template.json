@@ -1,0 +1,48 @@
+{
+  "variables": {
+    "aws_region": "{{env `AWS_REGION`}}",
+    "vpc_id": "{{env `VPCID`}}",
+    "subnet_id": "{{env `SUBNET_ID`}}",
+    "base_ami": "{{env `BASE_AMI`  }}",
+    "app_version": "{{env `APP_VERSION`}}",
+    "db_name": "{{env `DB_NAME`}}",
+    "db_dns": "{{env `DB_DNS`}}",
+    "db_password": "{{env `DB_PASSWORD` }}"
+  },
+
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "communicator": "ssh",
+      "ami_name": "Servian Tech Test App AMI with {{user `app_version`}} {{isotime \"2006.01.02_1504\"}} (HVM) base on Amazon Linux2 {{user `base_ami`}}",
+      "tags": {
+        "Commit": "{{user `commit_id`}}"
+      },
+      "region": "{{user `aws_region`}}",
+      "source_ami": "{{ user `base_ami` }}",
+      "associate_public_ip_address": false,
+      "vpc_id": "{{user `vpc_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "instance_type": "t2.micro",
+      "ssh_username": "ec2-user"
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo yum install golang -y",
+        "sudo yum install git -y",
+        "sudo git clone https://github.com/servian/TechChallengeApp.git;cd TechChallengeApp;pwd;ls -l;sudo su -c 'echo \"DbPassword\" = \"{{user `db_password`}}\" >> config.toml'",
+        "sudo su -c 'echo \"DbName\" = \"{{user `db_name`}}\" >> config.toml';sudo su -c 'echo \"DbHost\" = \"{{user `db_dns`}}\" >> config.toml'",
+        "sudo ./build.sh",
+        "sudo mkdir -p /app-source;sudo su -c 'cp -r /home/ec2-user/TechChallengeApp/dist/* /app-source'"
+      ],
+      "environment_vars": [
+        "APP_NAME={{user `app_name`}}",
+        "AWS_DEFAULT_REGION={{user `aws_region`}}"
+      ]
+    }
+  ]
+}

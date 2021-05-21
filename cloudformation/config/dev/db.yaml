@@ -1,0 +1,11 @@
+---
+stack_name: {{ 'db-' + var.environment }}
+template_path: rds.yaml
+
+parameters:
+  Environment: '{{ var.environment }}'
+  DbAllocatedStorage: " "
+  DbMultiAZ: "false"
+
+dependencies:
+  - 'dev/routes.yaml'

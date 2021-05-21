@@ -1,0 +1,12 @@
+---
+stack_name: {{ 'ServianchallengeApp-' + var.environment }}
+template_path: app.yaml
+
+parameters:
+  Env: '{{ var.environment }}'
+  VpcCidr: '{{ var.vpc_cidr }}'
+  AmiId: "ami-0358b745bf29fb20c"
+
+dependencies:
+  - 'dev/load-balancer.yaml'
+  - 'dev/db.yaml'

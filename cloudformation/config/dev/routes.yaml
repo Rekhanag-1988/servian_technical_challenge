@@ -1,0 +1,10 @@
+---
+stack_name: {{ 'routes-' + var.environment }}
+template_path: routes.yaml
+
+parameters:
+  Environment: '{{ var.environment }}'
+
+dependencies:
+  - 'dev/subnets.yaml'
+  - 'dev/security-groups.yaml'

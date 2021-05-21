@@ -1,0 +1,9 @@
+---
+stack_name: {{ 'security-groups-' + var.environment }}
+template_path: security-groups.yaml
+
+parameters:
+  Environment: '{{ var.environment }}'
+
+dependencies:
+  - 'dev/vpc.yaml'

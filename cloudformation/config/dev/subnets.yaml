@@ -1,0 +1,10 @@
+---
+stack_name: {{ 'subnets-' + var.environment }}
+template_path: workload_subnets.yaml
+
+parameters:
+  VpcCidr: '{{ var.vpc_cidr }}'
+  Environment: '{{ var.environment }}'
+
+dependencies:
+  - 'dev/vpc.yaml'

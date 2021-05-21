@@ -1,0 +1,137 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Application Load Balancer Configuration"
+
+## Stack Parameters
+Parameters:
+  Environment:
+    Description: "Workload Environment (dev/prod) (Required)"
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag  
+
+## Stack Resources
+Resources:
+  # SslCert:
+  #   Type: AWS::CertificateManager::Certificate
+  #   Properties:
+  #     DomainName: !Sub confluence.${Environment}.${ParentHostedZoneName}
+  #     DomainValidationOptions:
+  #       - DomainName: !Sub confluence.${Environment}.${ParentHostedZoneName}
+  #         HostedZoneId:
+  #           "Fn::ImportValue": !Sub "cdt-${Environment}-SubdomainDnsId"
+  #     SubjectAlternativeNames:
+  #       - !Sub confluence.${Environment}.${ParentHostedZoneName}
+  #       - !Sub jira.${Environment}.${ParentHostedZoneName}
+  #       - !Sub admin.${Environment}.${ParentHostedZoneName}
+  #     ValidationMethod: DNS  
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '300'             
+      Scheme: internet-facing
+      SecurityGroups: 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", IngressSubnetsElbSecurityGroup ] ]
+      Subnets: 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressA ] ] 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressB ] ] 
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressC ] ] 
+      Tags:
+        - Key: Name
+          Value: !Join ["-", [!Sub "${Environment}-vpc", alb]]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  LoadBalancerHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      # Certificates:
+      #   - CertificateArn: !Ref SslCert
+      DefaultActions:
+        - Type: fixed-response 
+          FixedResponseConfig:
+              StatusCode: 503
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP    
+  
+  AdminTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 3000
+      Protocol: HTTP
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      HealthCheckIntervalSeconds: 300
+      HealthCheckTimeoutSeconds: 120
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 10
+      Matcher:
+        HttpCode: 200-499
+      HealthCheckPath: '/'
+      HealthCheckPort: 3000
+      HealthCheckProtocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 0
+      Tags:
+        - Key: Name
+          Value: admin-target-group
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  # LoadBalancerHTTPSListenerRule:
+  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
+  #   Properties: 
+  #     Actions: 
+  #         - Type: forward
+  #           TargetGroupArn: !Ref AdminTargetGroup
+  #     Conditions:
+  #       - Field: host-header
+  #         HostHeaderConfig:
+  #           Values:
+  #             - admin.*
+  #     ListenerArn: !Ref LoadBalancerHTTPSListener
+  #     Priority: 3
+
+  # LoadBalancerCname:
+  #   Type: AWS::Route53::RecordSet
+  #   Properties:
+  #     HostedZoneId:
+  #       "Fn::ImportValue": !Sub "cdt-${Environment}-SubdomainDnsId"
+  #     Comment: Route53 cname for the ALB
+  #     Name: !Sub "admin.${Environment}.${ParentHostedZoneName}"
+  #     Type: CNAME
+  #     TTL: '900'
+  #     ResourceRecords:
+  #       - !GetAtt LoadBalancer.DNSName   
+
+Outputs:
+  LoadBalancerArn:
+    Description: The Load Balancer ARN
+    Value: !Ref LoadBalancer
+    Export:
+      Name: !Join ["-", [!Sub "${Environment}-vpc", AlbArn]]
+
+  # LoadBalancerDns:
+  #   Description: The Load Balancer DNS
+  #   Value: !GetAtt LoadBalancer.DNSName
+  #   Export:
+  #     Name: !Join ["-", [!Sub "${Environment}-vpc", AlbDns]]
+
+  LoadBalanceHTTPSListenerArn:
+    Description: The Load Balancer HTTP listener ARN
+    Value: !Ref LoadBalancerHTTPListener
+    Export:
+      Name: !Join ["-", [!Sub "${Environment}-vpc", AlbHttpArn]]    
+
