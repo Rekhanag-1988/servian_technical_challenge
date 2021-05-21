@@ -4,7 +4,7 @@ template_path: rds.yaml
 
 parameters:
   Environment: '{{ var.environment }}'
-  DbAllocatedStorage: " "
+  DbAllocatedStorage: "20"
   DbMultiAZ: "false"
 
 dependencies:

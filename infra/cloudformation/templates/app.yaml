@@ -84,6 +84,7 @@ Resources:
   AppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
+      AutoScalingGroupName: !Sub "${AppName}-${Env}"
       DesiredCapacity: !If [ MultiNode, 2, 1]
       LaunchConfigurationName: !Ref AppClusterNodeLaunchConfig
       MinSize: !If [ MultiNode, 2, 1]
@@ -95,7 +96,7 @@ Resources:
         - "Fn::ImportValue": !Join [ "-", [ !Sub "${Env}-vpc", SubnetApplicationC ] ] 
       Tags:
         - Key: Name
-          Value: !Sub "${AppName}-${Env}-ASG"
+          Value: !Sub "${AppName}-${Env}"
           PropagateAtLaunch: true              
     UpdatePolicy:
       AutoScalingRollingUpdate:
@@ -105,16 +106,6 @@ Resources:
 
   AppClusterNodeLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
-    Metadata:
-      AWS::CloudFormation::Init:
-        config:
-          commands:
-            seed_db_data:
-              command: "./app-source/TechChallengeApp updatedb -s"
-
-            serve_request:
-              command: "./app-source/TechChallengeApp server &"
-
     Properties:
       AssociatePublicIpAddress: false
       BlockDeviceMappings:
@@ -135,10 +126,8 @@ Resources:
             - ""
             -
               - "#!/bin/bash -xe\n"
-              - !Sub ["/opt/aws/bin/cfn-init -v --stack ${StackName}", StackName: !Ref "AWS::StackName"]
-              - !Sub [" --resource AppClusterNodeLaunchConfig --region ${Region}\n", Region: !Ref "AWS::Region"]
-              - !Sub ["/opt/aws/bin/cfn-signal -e $? --stack ${StackName}", StackName: !Ref "AWS::StackName"]
-              - !Sub [" --resource AppClusterNodeLaunchConfig --region ${Region}", Region: !Ref "AWS::Region"]
+              - "systemctl start amazon-ssm-agent\n"
+              - "app-source/servian_technical_challenge server &\n"
 
   AppClusterNodeScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
@@ -230,19 +219,6 @@ Resources:
       ListenerArn: 
         "Fn::ImportValue": !Join ["-", [!Sub "${Env}-vpc", AlbHttpArn]]
       Priority: 2
-
-  # LoadBalancerCname:
-  #   Type: AWS::Route53::RecordSet
-  #   Properties:
-  #     HostedZoneId:
-  #       "Fn::ImportValue": !Sub "cdt-${Env}-SubdomainDnsId"
-  #     Comment: Route53 cname for the ALB
-  #     Name: !Sub "${AppName}.${Env}.${ParentHostedZoneName}"
-  #     Type: CNAME
-  #     TTL: '900'
-  #     ResourceRecords:
-  #       - "Fn::ImportValue": !Join ["-", [!Sub "cdt-${Env}-vpc", AlbDns]]
-
 
 Outputs:
   AppAutoScalingGroup:

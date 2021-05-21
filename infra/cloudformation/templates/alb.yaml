@@ -15,20 +15,6 @@ Parameters:
 
 ## Stack Resources
 Resources:
-  # SslCert:
-  #   Type: AWS::CertificateManager::Certificate
-  #   Properties:
-  #     DomainName: !Sub confluence.${Environment}.${ParentHostedZoneName}
-  #     DomainValidationOptions:
-  #       - DomainName: !Sub confluence.${Environment}.${ParentHostedZoneName}
-  #         HostedZoneId:
-  #           "Fn::ImportValue": !Sub "cdt-${Environment}-SubdomainDnsId"
-  #     SubjectAlternativeNames:
-  #       - !Sub confluence.${Environment}.${ParentHostedZoneName}
-  #       - !Sub jira.${Environment}.${ParentHostedZoneName}
-  #       - !Sub admin.${Environment}.${ParentHostedZoneName}
-  #     ValidationMethod: DNS  
-
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -90,44 +76,12 @@ Resources:
         - Key: ownedBy
           Value: !Ref OwnedBy
 
-  # LoadBalancerHTTPSListenerRule:
-  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
-  #   Properties: 
-  #     Actions: 
-  #         - Type: forward
-  #           TargetGroupArn: !Ref AdminTargetGroup
-  #     Conditions:
-  #       - Field: host-header
-  #         HostHeaderConfig:
-  #           Values:
-  #             - admin.*
-  #     ListenerArn: !Ref LoadBalancerHTTPSListener
-  #     Priority: 3
-
-  # LoadBalancerCname:
-  #   Type: AWS::Route53::RecordSet
-  #   Properties:
-  #     HostedZoneId:
-  #       "Fn::ImportValue": !Sub "cdt-${Environment}-SubdomainDnsId"
-  #     Comment: Route53 cname for the ALB
-  #     Name: !Sub "admin.${Environment}.${ParentHostedZoneName}"
-  #     Type: CNAME
-  #     TTL: '900'
-  #     ResourceRecords:
-  #       - !GetAtt LoadBalancer.DNSName   
-
 Outputs:
   LoadBalancerArn:
     Description: The Load Balancer ARN
     Value: !Ref LoadBalancer
     Export:
       Name: !Join ["-", [!Sub "${Environment}-vpc", AlbArn]]
-
-  # LoadBalancerDns:
-  #   Description: The Load Balancer DNS
-  #   Value: !GetAtt LoadBalancer.DNSName
-  #   Export:
-  #     Name: !Join ["-", [!Sub "${Environment}-vpc", AlbDns]]
 
   LoadBalanceHTTPSListenerArn:
     Description: The Load Balancer HTTP listener ARN

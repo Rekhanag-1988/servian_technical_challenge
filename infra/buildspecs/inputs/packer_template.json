@@ -34,10 +34,11 @@
       "inline": [
         "sudo yum install golang -y",
         "sudo yum install git -y",
-        "sudo git clone https://github.com/servian/TechChallengeApp.git;cd TechChallengeApp;pwd;ls -l;sudo su -c 'echo \"DbPassword\" = \"{{user `db_password`}}\" >> config.toml'",
-        "sudo su -c 'echo \"DbName\" = \"{{user `db_name`}}\" >> config.toml';sudo su -c 'echo \"DbHost\" = \"{{user `db_dns`}}\" >> config.toml'",
-        "sudo ./build.sh",
-        "sudo mkdir -p /app-source;sudo su -c 'cp -r /home/ec2-user/TechChallengeApp/dist/* /app-source'"
+        "sudo yum install amazon-ssm-agent",
+        "git clone https://github.com/Rekhanag-1988/servian_technical_challenge.git;cd servian_technical_challenge/app/;echo -e '\n\"DbPassword\" = \"{{user `db_password`}}\"' >> conf.toml",
+        "echo -e '\"DbName\" = \"{{user `db_name`}}\"' >> conf.toml;echo -e '\"DbHost\" = \"{{user `db_dns`}}\"' >> conf.toml",
+        "./build.sh",
+        "sudo mkdir -p /app-source;sudo su -c 'cp -r /home/ec2-user/servian_technical_challenge/app/dist/* /app-source'"
       ],
       "environment_vars": [
         "APP_NAME={{user `app_name`}}",

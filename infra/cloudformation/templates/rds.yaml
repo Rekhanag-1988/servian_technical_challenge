@@ -58,7 +58,8 @@ Resources:
         SecretStringTemplate: '{"username": "postgres"}'
         GenerateStringKey: "password"
         PasswordLength: 16
-        ExcludeCharacters: '"@/\<>'
+        ExcludeCharacters: '"/\<>'
+        ExcludePunctuation: true
       Tags:
         - Key: Name
           Value: !Join [ "-", [ !Ref AppName, !Ref Environment, db ] ]
