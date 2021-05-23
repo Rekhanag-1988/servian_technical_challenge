@@ -140,10 +140,14 @@ Resources:
             - ""
             -
               - "#!/bin/bash -xe\n"
-              - "cd /app-source\n"
-              - !Sub ["echo -e '\nDbPassword = ${db_password} >> conf.toml\n'\n", db_password: !Ref DbPassword]
-              - !Sub ["echo -e '\nDbHost = ${db_host} >> conf.toml\n'\n", db_host: !Ref DbHost]
-              - !Sub ["echo -e '\nDbName = ${db_name} >> conf.toml\n'\n", db_name: !Ref DbName]
+              - "cd /app-source; rm -rf conf.toml\n"
+              - "echo -e '\"DbUser\" = \"postgres\"' >> conf.toml\n"
+              - "echo -e '\"DbPort\" = \"5432\"' >> conf.toml\n"
+              - "echo -e '\"ListenHost\" = \"0.0.0.0\"' >> conf.toml\n"
+              - "echo -e '\"ListenPort\" = \"3000\"' >> conf.toml\n"
+              - !Sub ["echo -e '\"DbPassword\" = \"${db_password}\"' >> conf.toml\n", db_password: !Ref DbPassword]
+              - !Sub ["echo -e '\"DbHost\" = \"${db_host}\"' >> conf.toml\n", db_host: !Ref DbHost]
+              - !Sub ["echo -e '\"DbName\" = \"${db_name}\"' >> conf.toml\n", db_name: !Ref DbName]
               - "./servian_technical_challenge updatedb -s;./servian_technical_challenge serve &\n"
 
   AppClusterNodeScaleUpPolicy:

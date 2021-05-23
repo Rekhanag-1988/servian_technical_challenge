@@ -21,7 +21,13 @@ To keep it simple had to weigh the decision between option1 and option2. EKS app
 
 We are accesing application via ALB dns-names. Below are the dns-names until we recreate the complete stacks.
 
-DEV: http://alb-d-LoadB-1CS3UIVH2WU0M-2092728165.ap-southeast-2.elb.amazonaws.com/
+DEV: http://alb-d-LoadB-1CS3UIVH2WU0M-2092728165.ap-southeast-2.elb.amazonaws.com/ \
 PROD: http://alb-p-LoadB-MJLVA2S0A8H7-926933410.ap-southeast-2.elb.amazonaws.com/
 
 Deployment will not be having any downtime to the application
+
+## DEMOS
+
+[Initial-Infra-Set-Up](https://youtu.be/REdljU6y4oA)
+
+[Pipeline-Deployments](https://youtu.be/REdljU6y4oA)
