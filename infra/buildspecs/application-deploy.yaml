@@ -1,0 +1,51 @@
+---
+version: 0.2
+
+env:
+  secrets-manager:
+    DB_NAME: /Servian-Tech-Challenge/${WORKLOAD_ENV}/database/master:dbname
+    DB_PASSWORD: /Servian-Tech-Challenge/${WORKLOAD_ENV}/database/master:password
+    DB_HOST: /Servian-Tech-Challenge/${WORKLOAD_ENV}/database/master:host
+
+phases:
+  install:
+    commands: 
+      - pip install sceptre
+  pre_build:
+    commands:
+      - chmod 755 infra/buildspecs/scripts/*
+  build:
+    commands:
+      - |
+        sceptre --dir infra/cloudformation \
+          --var "environment=${WORKLOAD_ENV}"  \
+          --var "ami_id=${AMI_ID}" \
+          --var "app_version=${APP_VERSION}" \
+          --var "db_name=${BRANCH}" \
+          --var "db_password=${DB_PASSWORD}" \
+          --var "db_host=${DB_HOST}" \
+          --var-file infra/cloudformation/envvars/common-vars.yaml \
+          --var-file infra/cloudformation/envvars/${WORKLOAD_ENV}.yaml \
+          update -y ${WORKLOAD_ENV}
+
+      - |
+        ALB_ARNS=$(aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerArn" --output text)
+        for ARN in ${ALB_ARNS};
+          do
+            name_tag=$(aws elbv2 describe-tags \
+              --resource-arns ${ARN} \
+              --query "TagDescriptions[].Tags[?Key=='Name'].Value" \
+              --output text)
+            if [ "${name_tag}" == "${WORKLOAD_ENV}-vpc-alb" ]; then
+              ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arn ${ARN} --query "LoadBalancers[].DNSName" --output text)
+            fi
+          done
+        echo "Checking health status for Servian-Tech-Challenge-App on ${WORKLOAD_ENV}"
+        HTTP_RESP_CODE=$(curl --silent --output /dev/null --write-out "%{http_code}" http://${ALB_DNS}/healthcheck/)
+        while [ "${HTTP_RESP_CODE}" -ne 200 ];
+          do
+            echo "Application health-check is failing.Will try again after 60 seconds"
+            sleep 60
+            HTTP_RESP_CODE=$(curl --silent --output /dev/null --write-out "%{http_code}" http://${ALB_DNS}/healthcheck/)
+          done
+        echo "Application: Servian-Tech-Challenge-App is up and running on ${WORKLOAD_ENV} environment."

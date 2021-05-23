@@ -11,5 +11,5 @@ parameters:
   DbHost: '{{ var.db_host }}'
 
 dependencies:
-  - 'dev/load-balancer.yaml'
-  - 'dev/db.yaml'
+  - 'prod/load-balancer.yaml'
+  - 'prod/db.yaml'

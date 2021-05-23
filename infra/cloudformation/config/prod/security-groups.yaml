@@ -6,4 +6,4 @@ parameters:
   Environment: '{{ var.environment }}'
 
 dependencies:
-  - 'dev/vpc.yaml'
+  - 'prod/vpc.yaml'

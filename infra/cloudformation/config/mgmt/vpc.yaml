@@ -1,6 +1,7 @@
 ---
 stack_name: {{ 'network-' + var.environment }}
-template_path: network.yaml
+template_path: mgmt/vpc.yaml
+
 parameters:
   VpcCidr: '{{ var.vpc_cidr }}'
   Environment: '{{ var.environment }}'

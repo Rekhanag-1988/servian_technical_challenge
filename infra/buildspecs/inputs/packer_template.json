@@ -6,15 +6,17 @@
     "base_ami": "{{env `BASE_AMI`  }}",
     "app_version": "{{env `APP_VERSION`}}",
     "db_name": "{{env `DB_NAME`}}",
-    "db_dns": "{{env `DB_DNS`}}",
-    "db_password": "{{env `DB_PASSWORD` }}"
+    "db_dns": "{{env `DB_HOST`}}",
+    "db_password": "{{env `DB_PASSWORD` }}",
+    "repo_branch": "{{env `SOURCE_REPO_BRANCH`}}",
+    "commit_id": "{{env `COMMIT_ID`}}"
   },
 
   "builders": [
     {
       "type": "amazon-ebs",
       "communicator": "ssh",
-      "ami_name": "Servian Tech Test App AMI with {{user `app_version`}} {{isotime \"2006.01.02_1504\"}} (HVM) base on Amazon Linux2 {{user `base_ami`}}",
+      "ami_name": "Servian Tech Test App AMI with version {{user `app_version`}} {{isotime \"2006.01.02_1504\"}} (HVM) base on Amazon Linux2 {{user `base_ami`}}",
       "tags": {
         "Commit": "{{user `commit_id`}}"
       },
@@ -34,8 +36,8 @@
       "inline": [
         "sudo yum install golang -y",
         "sudo yum install git -y",
-        "sudo yum install amazon-ssm-agent",
-        "git clone https://github.com/Rekhanag-1988/servian_technical_challenge.git;cd servian_technical_challenge/app/;echo -e '\n\"DbPassword\" = \"{{user `db_password`}}\"' >> conf.toml",
+        "sudo yum install amazon-ssm-agent -y",
+        "git clone --single-branch --branch {{user `repo_branch`}} https://github.com/Rekhanag-1988/servian_technical_challenge.git ;cd servian_technical_challenge/app/;echo -e '\n\"DbPassword\" = \"{{user `db_password`}}\"' >> conf.toml",
         "echo -e '\"DbName\" = \"{{user `db_name`}}\"' >> conf.toml;echo -e '\"DbHost\" = \"{{user `db_dns`}}\"' >> conf.toml",
         "./build.sh",
         "sudo mkdir -p /app-source;sudo su -c 'cp -r /home/ec2-user/servian_technical_challenge/app/dist/* /app-source'"

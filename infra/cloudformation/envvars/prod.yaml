@@ -1,4 +1,3 @@
 ---
 # Network Configurations
-vpc_cidr: 10.20.30.0/22
-
+vpc_cidr: 10.60.30.0/22

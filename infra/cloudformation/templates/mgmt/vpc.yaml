@@ -1,0 +1,274 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Management Account Complete Configuration Template'
+
+## Stack Parameters
+Parameters:
+  VpcCidr:
+    Description: 'Vpc Cidr Block Range (Required)'
+    Type: String
+
+  Environment:
+    Description: 'Vpc Environment Name (e.g. mgmt, mgmt-dev) (Required)'
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag  
+
+Resources:
+  Vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      InstanceTenancy: default
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-vpc'
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags:
+        - Key: Name
+          Value: !Sub 'servian-${Environment}-internetgateway'
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  SubnetCICDA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [0, !Cidr [ !Ref VpcCidr, "6", "4" ]]
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: 'false'
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', a-cicd ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  SubnetCICDB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [1, !Cidr [ !Ref VpcCidr, "6", "4" ]]
+      AvailabilityZone: !Sub "${AWS::Region}b"
+      MapPublicIpOnLaunch: "false"
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', b-cicd ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  SubnetCICDC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [2, !Cidr [ !Ref VpcCidr, "6", "4" ]]
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      MapPublicIpOnLaunch: "false"
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', c-cicd ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  PublicSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [3, !Cidr [ !Ref VpcCidr, "6", "4" ]]
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: "true"
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', a-public ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  MgmtTransitGateway:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      Description: "TransitGateway to link mgmt/workload VPC's"
+      AutoAcceptSharedAttachments: "enable"
+      DefaultRouteTableAssociation: "enable"
+      DnsSupport: "enable"
+      Tags:
+      - Key: Name
+        Value: !Sub "${Environment}-TransitGateWay"
+
+  CICDSubnetRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', cicd-subnets-route-table ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  PublicSubnetRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', public-subnets-route-table ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  PublicSubnetInternetGatewayRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  CICDNatRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref CICDSubnetRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT
+    DependsOn: 
+      - CICDSubnetRouteTable
+      - NAT
+
+  PublicSubnetRouteAsso:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      SubnetId: !Ref PublicSubnet1
+    DependsOn: PublicSubnetRouteTable
+
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Nat-gateway-EIP
+
+  NAT:
+   Type: AWS::EC2::NatGateway
+   Properties:
+      AllocationId:
+         Fn::GetAtt:
+         - NatEIP
+         - AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: CICD-Natgateway
+
+  CICDSubnetARouteAsso:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref CICDSubnetRouteTable
+      SubnetId: !Ref SubnetCICDA
+    DependsOn: CICDSubnetRouteTable
+
+  CICDSubnetBRouteAsso:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref CICDSubnetRouteTable
+      SubnetId: !Ref SubnetCICDB
+    DependsOn: CICDSubnetRouteTable
+
+  CICDSubnetCRouteAsso:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref CICDSubnetRouteTable
+      SubnetId: !Ref SubnetCICDC
+    DependsOn: CICDSubnetRouteTable
+
+  CICDEc2Sg:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: CICD Subnets EC2 Security Group
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub '${Environment}-vpc', cicd-subnets-ec2-security-group ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy
+
+  CICDEc2SgEgress01:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      GroupId: !Ref CICDEc2Sg
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+  
+  CICDEc2SgIngress01:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref CICDEc2Sg
+      Description: Internal communications
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref CICDEc2Sg
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: servian-codepipeline-artifacts
+      AccessControl: PublicRead  
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub '${Environment}-vpc'
+
+  SubnetCICDAId:
+    Value: !Ref SubnetCICDA
+    Export:
+     Name: !Join [ "-", [ !Sub '${Environment}-vpc', SubnetCICDA ] ]
+
+  SubnetCICDBId:
+    Value: !Ref SubnetCICDB
+    Export:
+     Name: !Join [ "-", [ !Sub '${Environment}-vpc', SubnetCICDB ] ]
+
+  SubnetCICDCId:
+    Value: !Ref SubnetCICDC
+    Export:
+      Name: !Join [ "-", [ !Sub '${Environment}-vpc', SubnetCICDC ] ]    
+
+  CICDEc2SgId:
+    Value: !Ref CICDEc2Sg
+    Export:
+      Name: !Join [ "-", [ !Sub '${Environment}-vpc', CICDSubnetsEc2SecurityGroup ] ]   

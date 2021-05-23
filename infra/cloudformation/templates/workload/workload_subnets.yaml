@@ -1,0 +1,224 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC Subnets Configuration"
+
+## Stack Parameters
+Parameters:
+  VpcCidr:
+    Description: "Vpc Cidr Block Range (e.g. 192.168.0.0/22) (Required)"
+    Type: String
+
+  Environment:
+    Description: "Workload Environment (sandbox/dev/stg/prod) (Required)"
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag
+
+## Stack Resources
+Resources:
+  # Ingress Subnets
+  SubnetIngressA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 0, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: "true"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", a-ingress ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  SubnetIngressB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 1, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}b"
+      MapPublicIpOnLaunch: "true"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", b-ingress ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  SubnetIngressC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 2, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      MapPublicIpOnLaunch: "true"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", c-ingress ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  # Application Subnets
+  SubnetApplicationA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 3, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", a-application ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  SubnetApplicationB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 4, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}b"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", b-application ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  SubnetApplicationC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 5, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", c-application ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+
+  # Data Subnets
+  SubnetDatabaseA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 6, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", a-database ] ]
+        - Key: environment 
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy           
+
+  SubnetDatabaseB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 7, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}b"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", b-database ] ]
+        - Key: environment 
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  SubnetDatabaseC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      CidrBlock: !Select [ 8, !Cidr [ !Ref VpcCidr, 9, 4 ]]
+      AvailabilityZone: !Sub "${AWS::Region}c"
+      MapPublicIpOnLaunch: "false"
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", c-database ] ]
+        - Key: environment 
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  
+## Stack Outputs
+Outputs:
+  SubnetIngressAId:
+    Value:
+      Ref: SubnetIngressA
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressA ] ]
+
+  SubnetIngressBId:
+    Value:
+      Ref: SubnetIngressB
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressB ] ]
+
+  SubnetIngressCId:
+    Value:
+      Ref: SubnetIngressC
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetIngressC ] ]
+  SubnetApplicationAId:
+    Value:
+      Ref: SubnetApplicationA
+    Export:
+     Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetApplicationA ] ]
+
+  SubnetApplicationBId:
+    Value:
+      Ref: SubnetApplicationB
+    Export:
+     Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetApplicationB ] ]
+
+  SubnetApplicationCId:
+    Value:
+      Ref: SubnetApplicationC
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetApplicationC ] ]
+
+  SubnetDatabaseAId:
+    Value:
+      Ref: SubnetDatabaseA
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseA ] ] 
+
+  SubnetDatabaseBId:
+    Value:
+      Ref: SubnetDatabaseB
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseB ] ]
+
+  SubnetDatabaseCId:
+    Value:
+      Ref: SubnetDatabaseC
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseC ] ]
