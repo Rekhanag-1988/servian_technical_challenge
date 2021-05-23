@@ -1,0 +1,121 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "PostgreSQL Relational Database Configuration"
+
+## Stack Parameters
+Parameters:
+  Environment:
+    Description: "Workload Environment (dev/prod) (Required)"
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag
+
+  AppName:
+    Description: "Application Name"
+    Type: String
+    Default: Servian-Tech-Challenge
+
+  DbEngineVersion:
+    Default: 10.15
+    Description: "PostgreSQL Major Version (Optional)"
+    Type: String
+
+  DbInstanceClass:
+    Default: db.t2.micro
+    Description: "Database Instance Type"
+    Type: String
+
+  DbAllocatedStorage:
+    Default: 20
+    Description: Database allocated storage size, in gigabytes (GB)
+    Type: Number 
+
+  DbMultiAZ:
+    Default: false
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Must be 'true' or 'false'.
+    Description: Whether to provision a multi-AZ RDS instance.
+    Type: String
+
+  DbName:
+    Description: Application database name
+    Type: String
+    Default: ServianTechChallenge 
+
+## Storage Resources
+Resources:
+  DbMasterUserPassword:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: !Sub /${AppName}/database/master 
+      Description: !Sub DB master user (postgres) password for ${AppName}-${Environment}
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "postgres"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"/\<>'
+        ExcludePunctuation: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref AppName, !Ref Environment, db ] ]
+        - Key: environment 
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy          
+
+  DbSubnetGroup: 
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: Subnets available for the Postgres database instance
+      SubnetIds: 
+       - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseA ] ]
+       - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseB ] ]
+       - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", SubnetDatabaseC ] ]
+
+  Db:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AllocatedStorage: !Ref DbAllocatedStorage
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: 7
+      DBName: !Ref DbName
+      DBInstanceClass: !Ref DbInstanceClass
+      DBInstanceIdentifier: !Join [ "-", [ !Ref AppName, !Ref Environment, db ] ] 
+      DBSubnetGroupName: !Ref DbSubnetGroup 
+      Engine: postgres
+      EngineVersion: !Ref DbEngineVersion
+      MasterUsername: postgres
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref DbMasterUserPassword, ':SecretString:password}}' ]]
+      MultiAZ: !Ref DbMultiAZ
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref AppName, !Ref Environment, db ] ]
+        - Key: environment
+          Value: !Ref Environment
+        - Key: ownedBy
+          Value: !Ref OwnedBy          
+      VPCSecurityGroups:
+        - "Fn::ImportValue": !Join [ "-", [ !Sub "${Environment}-vpc", DatabaseSubnetsRdsSecurityGroup ] ]
+
+  SecretRDSInstanceAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref DbMasterUserPassword
+      TargetId: !Ref Db
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  DbMasterUserPassword:
+    Value: !Ref DbMasterUserPassword
+    Description: The Database master credential
+    Export:
+      Name: !Sub ${Environment}-${AppName}-database-master
+
+  RdsEndPointAddress:
+    Description: The Database Connection String
+    Value: !GetAtt Db.Endpoint.Address

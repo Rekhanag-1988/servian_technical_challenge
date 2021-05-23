@@ -1,0 +1,563 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates the application deployment lifecycle pipeline
+
+## Stack Parameters
+Parameters:
+  ApplicationName:
+    Description: Application name to be deployed (Required)
+    Type: String
+
+  BuildRequired:
+    Description: Whether to build AMI or not (Required)
+    Type: String
+
+  MgmtEnv:
+    Description: Pipeline environment mgmt ot mgmt-dev
+    Type: String
+
+  RepositoryName:
+    Description: The name of the code repository
+    Type: String
+
+  TestSuiteRepositoryName:
+    Description: Test suite repository name
+    Type: String
+
+  RepositoryBranchName:
+    Description: The name of the branch of the code repository
+    Type: String
+
+  TestSuiteRepositoryBranchName:
+    Description: Test suite repository branch name
+    Type: String
+    Default: master
+
+  RepositoryURL:
+    Description: The URL of the code repository
+    Type: String
+
+  BuildImage:
+    Description: The location of the docker image that will perform the build
+    Type: String
+
+  AppVersion:
+    Description: Application version to build the AMI (Required)
+    Type: String
+  
+  StageChangeRecord:
+    Description: Change record for stage environment deployment (Required)
+    Type: String
+
+  ProdChangeRecord:
+    Description: Change record for prod environment deployment (Required)
+    Type: String
+
+Conditions:
+  IsMasterBranch: !Equals [!Ref RepositoryBranchName, master]
+  IsIntegrationBranch: !Equals [!Ref RepositoryBranchName, development]
+  IsFeatureBranch: !And
+    - !Not [!Equals [!Ref RepositoryBranchName, master]]
+    - !Not [!Equals [!Ref RepositoryBranchName, development]]
+  IsBuildRequired: !Not [!Equals [!Ref RepositoryBranchName, master]]
+
+## Stack Resources
+Resources:
+  CodeBuildLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/CDT-Mgmt-CodeBuildLogs/${AWS::StackName}"
+      RetentionInDays: !If [ IsFeatureBranch, 14, 90 ]
+
+  CodeBuildBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-AMI-Builder"
+      Description: Builds application's AMI using HashiCorp Packer
+      Artifacts:
+        Type: NO_ARTIFACTS
+      EncryptionKey: !ImportValue CdtEnvKmsKeyId
+        # "Fn::ImportValue": !Sub "Cdt-${Environment}-KmsKeyId"
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: REPO_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: VPCID
+            Value: 
+              "Fn::ImportValue": !Sub "cdt-${MgmtEnv}-vpc"
+          - Name: SUBNET_ID
+            Value: 
+              "Fn::ImportValue": !Sub "cdt-${MgmtEnv}-vpc-SubnetCICDA"
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: APP_VERSION
+            Value: !Ref AppVersion
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/workload-managed/CDT-workload-bootstrap-role
+      Source:
+        Location: !Ref RepositoryURL
+        Type: CODECOMMIT
+        BuildSpec: AWS/buildspecs/ami-builder.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", CICDSubnetsEc2SecurityGroup ] ]
+        Subnets: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDA ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDB ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDC ] ]
+        VpcId: 
+          "Fn::ImportValue": !Sub "cdt-${MgmtEnv}-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: AMI-Builder
+
+  ManualApprovalSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: CDT Manual Approval For Change Controlled Environments.
+      TopicName: !Sub "CDT-Pipeline-Manual-Approval-${RepositoryBranchName}"
+      KmsMasterKeyId: !ImportValue CdtEnvKmsKeyId
+      Subscription:
+        - Endpoint: rekhanag.yalakurthi@iag.com.au
+          Protocol: email
+        - Endpoint: michael.thornhill@iag.com.au
+          Protocol: email
+
+  CodeBuildDeploy:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-Deploy"
+      Description: Deploys Both Infrastructure And Application CloudFormation Stacks On To A Given Workload Environment
+      Artifacts:
+        Type: NO_ARTIFACTS
+      EncryptionKey: !ImportValue CdtEnvKmsKeyId
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: APP_VERSION
+            Value: !Ref AppVersion
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+          - Name: STG_CHANGE_REQUEST
+            Value: !Ref StageChangeRecord
+          - Name: PRD_CHANGE_REQUEST
+            Value: !Ref ProdChangeRecord
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/workload-managed/CDT-workload-bootstrap-role
+      Source:
+        Location: !Ref RepositoryURL
+        Type: CODECOMMIT
+        BuildSpec: AWS/buildspecs/application-deploy.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", CICDSubnetsEc2SecurityGroup ] ]
+        Subnets: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDA ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDB ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDC ] ]
+        VpcId: 
+          "Fn::ImportValue": !Sub "cdt-${MgmtEnv}-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: Deploy
+
+
+  CodeBuildTest:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-TestApplication"
+      Description: Execuetes test cases for given application and environment.
+      Artifacts:
+        Type: NO_ARTIFACTS
+      EncryptionKey: !ImportValue CdtEnvKmsKeyId
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/workload-managed/CDT-workload-bootstrap-role
+      Source:
+        Location: !Ref RepositoryURL
+        Type: CODECOMMIT
+        BuildSpec: AWS/buildspecs/application-test.yaml
+      VpcConfig:
+        SecurityGroupIds: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", CICDSubnetsEc2SecurityGroup ] ]
+        Subnets: 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDA ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDB ] ] 
+          - "Fn::ImportValue": !Join [ "-", [ !Sub "cdt-${MgmtEnv}-vpc", SubnetCICDC ] ]
+        VpcId: 
+          "Fn::ImportValue": !Sub "cdt-${MgmtEnv}-vpc"
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: Test
+
+  CodeBuildRelease:
+    Type: AWS::CodeBuild::Project
+    Condition: IsIntegrationBranch
+    Properties:
+      Name: !Sub "${AWS::StackName}-ReleaseAMI"
+      Description: Stores AMI-ID in parameter-store post successful application testing.
+      Artifacts:
+        Type: NO_ARTIFACTS
+      EncryptionKey: !ImportValue CdtEnvKmsKeyId
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: !Ref BuildImage
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: APP_NAME
+            Value: !Ref ApplicationName
+          - Name: REPOSITORY_NAME
+            Value: !Ref RepositoryName
+          - Name: BRANCH
+            Value: !Ref RepositoryBranchName
+          - Name: IS_BUILD_REQUIRED
+            Value: !Ref BuildRequired
+      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/workload-managed/CDT-workload-bootstrap-role
+      Source:
+        Location: !Ref RepositoryURL
+        Type: CODECOMMIT
+        BuildSpec: AWS/buildspecs/release-ami.yaml
+      LogsConfig:
+        CloudWatchLogs:
+          GroupName: !Ref CodeBuildLogsGroup
+          Status: ENABLED
+          StreamName: AMI-Release
+
+  CodePipelinePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${AWS::StackName}-CodePipeline"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Resource:
+              - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${RepositoryName}"
+              - !Sub "arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${TestSuiteRepositoryName}"
+            Action:
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - codecommit:GetUploadArchiveStatus
+              - codecommit:UploadArchive
+          - Effect: Allow
+            Resource: "*"
+            Action:
+              - codebuild:BatchGetBuilds
+              - codebuild:StartBuild
+          - Effect: Allow
+            Resource:
+              - arn:aws:kms:ap-southeast-2:956591395829:key/6bc3a3ce-53ff-4a18-8b8a-64c4483c6aa2
+              # - !ImportValue CdtEnvKmsKeyArn
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+          - Effect: Allow
+            Resource: "arn:aws:s3:::*"
+            Action:
+              - s3:*
+          - Effect: Allow
+            Resource: 
+              - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
+            Action:
+              - sns:Publish
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /workload-managed/
+      PermissionsBoundary: !Sub 'arn:aws:iam::${AWS::AccountId}:policy/permissions-boundaries/CF-Baseline-Roles-No-Bakery-workload-managed-roles-boundary'
+      RoleName: !Sub "${AWS::StackName}-CodePipeline"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref CodePipelinePolicy
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Ref AWS::StackName
+      RestartExecutionOnUpdate: False
+      ArtifactStore:
+        Location: cdt-mgmt-artifacts
+        Type: S3
+        EncryptionKey:
+          Id: !ImportValue CdtEnvKmsKeyId
+            # "Fn::ImportValue": !Sub "Cdt-${Environment}-KmsKeyId"
+          Type: KMS
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              Namespace: SourceVariables
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: '1'
+              Configuration:
+                RepositoryName: !Ref RepositoryName
+                BranchName: !Ref RepositoryBranchName
+                PollForSourceChanges: False
+              OutputArtifacts:
+                - Name: SourceCode
+            - Name: TestSuiteSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: '1'
+              Configuration:
+                RepositoryName: !Ref TestSuiteRepositoryName
+                BranchName: !Ref TestSuiteRepositoryBranchName
+                PollForSourceChanges: False
+              OutputArtifacts:
+                - Name: TestSuiteSource
+        - Name: Formulate-AMI
+          Actions:
+            - Name: Build
+              Namespace: BuildVariables
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildBuild
+                PrimarySource: SourceCode/AWS/buildspecs
+                EnvironmentVariables: "[{\"name\":\"COMMIT_ID\",\"value\":\"#{SourceVariables.CommitId}\",\"type\":\"PLAINTEXT\"}]"
+              InputArtifacts:
+                - Name: SourceCode
+              OutputArtifacts:
+                - Name: Build
+        
+        - !If # Sandbox deployment will happen for every feature branch
+          - IsFeatureBranch
+          - Name: Sandbox-Deployment
+            Actions:
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"sandbox-2\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 1
+
+              - Name: TEST
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildTest
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[{\"name\":\"WORKLOAD_ENV\",\"value\":\"sandbox-2\",\"type\":\"PLAINTEXT\"}]"
+                InputArtifacts:
+                  - Name: SourceCode
+                  - Name: TestSuiteSource
+                RunOrder: 2
+
+          - !Ref AWS::NoValue
+       
+
+        - !If # Dev-env deployment will happen for every feature branch
+          - IsIntegrationBranch
+          - Name: Dev-Deployment
+            Actions:
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 1
+
+              - Name: TEST
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildTest
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[{\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}]"
+                InputArtifacts:
+                  - Name: SourceCode
+                  - Name: TestSuiteSource
+                RunOrder: 2
+
+              - Name: RELEASE
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildRelease
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 3
+
+          - !Ref AWS::NoValue
+
+        - !If # STG deployment/testing on merge to master branch.
+          - IsMasterBranch
+          - Name: Stage-Deployment
+            Actions:
+              - Name: MANUAL-APPROVAL
+                ActionTypeId:
+                  Category: Approval
+                  Owner: AWS
+                  Provider: Manual
+                  Version: '1'
+                Configuration:
+                  NotificationArn: !Ref ManualApprovalSNSTopic
+                  CustomData: !Sub "Approval Request For ${ApplicationName} Deployment In Stage Environment."
+                RunOrder: 1
+
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"stg\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 2
+
+              - Name: TEST
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildTest
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"stg\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                  - Name: TestSuiteSource
+                RunOrder: 3
+          
+          - !Ref AWS::NoValue
+
+        - !If # Production deployment post Manual approval and SNOW Change validation
+          - IsMasterBranch
+          - Name: Production-Deployment
+            Actions:
+              - Name: MANUAL-APPROVAL
+                ActionTypeId:
+                  Category: Approval
+                  Owner: AWS
+                  Provider: Manual
+                  Version: '1'
+                Configuration:
+                  NotificationArn: !Ref ManualApprovalSNSTopic
+                  CustomData: !Sub "Approval Request For ${ApplicationName} Deployment In Prod Environment."
+                RunOrder: 1
+
+              - Name: DEPLOY
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref CodeBuildDeploy
+                  PrimarySource: SourceCode
+                  EnvironmentVariables: "[
+                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"prod\",\"type\":\"PLAINTEXT\"}
+                  ]"
+                InputArtifacts:
+                  - Name: SourceCode
+                RunOrder: 2
+          - !Ref AWS::NoValue
+
+  CodeStarNotificationRule:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties: 
+      DetailType: FULL
+      EventTypeIds: 
+        - codepipeline-pipeline-pipeline-execution-failed
+        - codepipeline-pipeline-pipeline-execution-started
+        - codepipeline-pipeline-pipeline-execution-succeeded
+      Name: !Sub CDT-Workload-pipeline-Notifier-${RepositoryBranchName}
+      Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}
+      Status: ENABLED
+      Targets:
+        - TargetType: SNS 
+          TargetAddress: !ImportValue CDT-Notifier-Topic-Arn
+
+
+Outputs:
+  CodePipelineName:
+    Value: !Ref CodePipeline
+    Description: Name of the pipeline

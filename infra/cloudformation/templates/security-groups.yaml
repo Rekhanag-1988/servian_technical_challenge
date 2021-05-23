@@ -1,0 +1,136 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Vpc Security Group Configuration"
+
+## Stack Parameters
+Parameters:
+  Environment:
+    Description: "Workload Environment (dev/prod) (Required)"
+    Type: String
+
+  OwnedBy:
+    Description: Owner tag to be used while cleaning the rss
+    Type: String
+    Default: rekhanag
+
+## Stack Resources
+Resources:
+  IngressElbSg:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Ingress Subnets ELB Security Group
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", ingress-subnets-elb-security-group ] ]
+        - Key: environment 
+          Value: !Ref Environment         
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  IngressElbSgEgress01:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      GroupId: !Ref IngressElbSg
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
+  IngressElbSgIngress01:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref IngressElbSg
+      Description: Http traffics to ELB from Internet
+      IpProtocol: tcp
+      FromPort: "80"
+      ToPort: "80"
+
+  ApplicationEc2Sg:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Application Subnets EC2 Security Group
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", application-subnets-ec2-security-group ] ]
+        - Key: environment 
+          Value: !Ref Environment 
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  ApplicationEc2SgEgress01:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      GroupId: !Ref ApplicationEc2Sg
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
+  ApplicationEc2SgIngress02:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref ApplicationEc2Sg
+      Description: Node internal communications
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref ApplicationEc2Sg   
+
+  ApplicationEc2SgIngress03:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref ApplicationEc2Sg
+      Description: Application port
+      IpProtocol: tcp
+      FromPort: "3000"
+      ToPort: "3000"
+      SourceSecurityGroupId: !Ref IngressElbSg   
+
+  DatabaseRdsSg:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Database Subnets RDS Security Group
+      VpcId:
+        "Fn::ImportValue": !Sub "${Environment}-vpc"
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Sub "${Environment}-vpc", database-subnets-rds-security-group ] ]
+        - Key: environment 
+          Value: !Ref Environment
+        - Key: owner
+          Value: !Ref OwnedBy
+
+  DatabaseRdsSgEgress01:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      GroupId: !Ref DatabaseRdsSg
+      IpProtocol: "-1"
+      CidrIp: 0.0.0.0/0
+
+  DatabaseRdsSgIngress01:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref DatabaseRdsSg
+      Description: Postgres
+      IpProtocol: tcp
+      FromPort: "5432"
+      ToPort: "5432"
+      SourceSecurityGroupId: !Ref ApplicationEc2Sg
+
+Outputs:
+  IngressElbSgId:
+    Value:
+      Ref: IngressElbSg
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", IngressSubnetsElbSecurityGroup ] ]
+
+  ApplicationEc2SgId:
+    Value:
+      Ref: ApplicationEc2Sg
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", ApplicationSubnetsEc2SecurityGroup ] ]   
+
+  DatabaseRdsSgId:
+    Value:
+      Ref: DatabaseRdsSg
+    Export:
+      Name: !Join [ "-", [ !Sub "${Environment}-vpc", DatabaseSubnetsRdsSecurityGroup ] ]
+

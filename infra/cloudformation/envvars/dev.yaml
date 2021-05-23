@@ -1,3 +1,4 @@
 ---
 # Network Configurations
 vpc_cidr: 10.20.30.0/22
+
