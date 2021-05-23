@@ -4,8 +4,8 @@ template_path: workload/rds.yaml
 
 parameters:
   Environment: '{{ var.environment }}'
-  DbAllocatedStorage: "20"
-  DbMultiAZ: "false"
+  DbAllocatedStorage: "30"
+  DbMultiAZ: "true"
 
 dependencies:
-  - 'dev/routes.yaml'
+  - 'prod/routes.yaml'

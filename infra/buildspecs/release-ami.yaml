@@ -1,0 +1,9 @@
+---
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - |
+          echo "Releasing AMI: ${AMI_ID} to ParameterStore"
+          aws ssm put-parameter --name "SERVIAN-TECH-CHALLENGE-TESTED-AMI" --value "${AMI_ID}" --type "String" --overwrite

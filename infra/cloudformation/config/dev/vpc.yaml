@@ -1,6 +1,6 @@
 ---
 stack_name: {{ 'vpc-' + var.environment }}
-template_path: network.yaml
+template_path: workload/network.yaml
 parameters:
   VpcCidr: '{{ var.vpc_cidr }}'
   Environment: '{{ var.environment }}'

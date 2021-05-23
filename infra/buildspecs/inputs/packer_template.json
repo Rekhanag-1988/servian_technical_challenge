@@ -6,9 +6,10 @@
     "base_ami": "{{env `BASE_AMI`  }}",
     "app_version": "{{env `APP_VERSION`}}",
     "db_name": "{{env `DB_NAME`}}",
-    "db_dns": "{{env `DB_DNS`}}",
+    "db_dns": "{{env `DB_HOST`}}",
     "db_password": "{{env `DB_PASSWORD` }}",
-    "repo_branch": "{{env `SOURCE_REPO_BRANCH`}}"
+    "repo_branch": "{{env `SOURCE_REPO_BRANCH`}}",
+    "commit_id": "{{env `COMMIT_ID`}}"
   },
 
   "builders": [

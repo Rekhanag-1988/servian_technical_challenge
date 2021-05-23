@@ -12,7 +12,7 @@ Parameters:
   BuildRequired:
     Description: Whether to build AMI or not (Required)
     Type: String
-    Default: true
+    Default: false
 
   RepositoryName:
     Description: The name of the code repository
@@ -22,7 +22,7 @@ Parameters:
   RepositoryBranchName:
     Description: The name of the branch of the code repository
     Type: String
-    Default: development
+    Default: master
 
   RepositoryURL:
     Description: The URL of the code repository
@@ -45,9 +45,7 @@ Parameters:
     Default: 123
 
 Conditions:
-  IsMasterBranch: !Equals [!Ref RepositoryBranchName, master]
   IsDevBranch: !Equals [!Ref RepositoryBranchName, development]
-  IsBuildRequired: !Not [!Equals [!Ref RepositoryBranchName, master]]
 
 ## Stack Resources
 Resources:
@@ -71,7 +69,7 @@ Resources:
         EnvironmentVariables:
           - Name: REPO_NAME
             Value: !Ref RepositoryName
-          - Name: BRANCH
+          - Name: SOURCE_REPO_BRANCH
             Value: !Ref RepositoryBranchName
           - Name: VPCID
             Value: 
@@ -79,8 +77,6 @@ Resources:
           - Name: SUBNET_ID
             Value: 
               "Fn::ImportValue": "mgmt-vpc-SubnetCICDA"
-          - Name: APP_NAME
-            Value: !Ref ApplicationName
           - Name: APP_VERSION
             Value: !Ref AppVersion
           - Name: IS_BUILD_REQUIRED
@@ -113,7 +109,7 @@ Resources:
       DisplayName: Manual Approval For Change Controlled Environments.
       TopicName: !Sub "Pipeline-Manual-Approval-${RepositoryBranchName}"
       Subscription:
-        - Endpoint: rekhanagy1@gmail.com
+        - Endpoint: rekhanagy87@gmail.com
           Protocol: email
 
   CodeBuildDeploy:
@@ -201,44 +197,10 @@ Resources:
           Status: ENABLED
           StreamName: Test
 
-  CodeBuildRelease:
-    Type: AWS::CodeBuild::Project
-    Condition: IsDevBranch
-    Properties:
-      Name: !Sub "${AWS::StackName}-ReleaseAMI"
-      Description: Stores AMI-ID in parameter-store post successful application testing.
-      Artifacts:
-        Type: NO_ARTIFACTS
-      Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: !Ref BuildImage
-        Type: LINUX_CONTAINER
-        EnvironmentVariables:
-          - Name: APP_NAME
-            Value: !Ref ApplicationName
-          - Name: REPOSITORY_NAME
-            Value: !Ref RepositoryName
-          - Name: BRANCH
-            Value: !Ref RepositoryBranchName
-          - Name: IS_BUILD_REQUIRED
-            Value: !Ref BuildRequired
-      ServiceRole: !Sub arn:aws:iam::${AWS::AccountId}:role/Servian_BootStrap_Role
-      Source:
-        Auth:
-          Type: OAUTH
-        Location: !Ref RepositoryURL
-        Type: GITHUB
-        BuildSpec: infra/buildspecs/release-ami.yaml
-      LogsConfig:
-        CloudWatchLogs:
-          GroupName: !Ref CodeBuildLogsGroup
-          Status: ENABLED
-          StreamName: AMI-Release
-
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: App-Deploy-Development
+      Name: App-Deploy-Production
       RestartExecutionOnUpdate: False
       ArtifactStore:
         Location: servian-codepipeline-artifacts
@@ -257,7 +219,7 @@ Resources:
               Configuration:
                 ConnectionArn: 'arn:aws:codestar-connections:ap-southeast-2:047276474071:connection/2de84993-792d-434e-ab79-c5859a70f524'
                 FullRepositoryId: 'Rekhanag-1988/servian_technical_challenge'
-                BranchName: development
+                BranchName: !Ref RepositoryBranchName
               OutputArtifacts:
                 - Name: SourceCode
         - Name: Formulate-AMI
@@ -277,91 +239,36 @@ Resources:
                 - Name: SourceCode
               OutputArtifacts:
                 - Name: Build
-        
-        - !If # Sandbox deployment will happen for every feature branch
-          - IsDevBranch
-          - Name: Dev-Deployment
-            Actions:
-              - Name: DEPLOY
-                ActionTypeId:
-                  Category: Build
-                  Owner: AWS
-                  Provider: CodeBuild
-                  Version: '1'
-                Configuration:
-                  ProjectName: !Ref CodeBuildDeploy
-                  PrimarySource: SourceCode
-                  EnvironmentVariables: "[
-                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
-                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}
-                  ]"
-                InputArtifacts:
-                  - Name: SourceCode
-                RunOrder: 1
+    
+        - Name: Production-Deployment
+          Actions:
+            - Name: MANUAL-APPROVAL
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                NotificationArn: !Ref ManualApprovalSNSTopic
+                CustomData: !Sub "Approval Request For ${ApplicationName} Deployment In Prod Environment."
+              RunOrder: 1
 
-              - Name: TEST
-                ActionTypeId:
-                  Category: Build
-                  Owner: AWS
-                  Provider: CodeBuild
-                  Version: '1'
-                Configuration:
-                  ProjectName: !Ref CodeBuildTest
-                  PrimarySource: SourceCode
-                  EnvironmentVariables: "[{\"name\":\"WORKLOAD_ENV\",\"value\":\"dev\",\"type\":\"PLAINTEXT\"}]"
-                InputArtifacts:
-                  - Name: SourceCode
-                RunOrder: 2
-
-              - Name: RELEASE
-                ActionTypeId:
-                  Category: Build
-                  Owner: AWS
-                  Provider: CodeBuild
-                  Version: '1'
-                Configuration:
-                  ProjectName: !Ref CodeBuildRelease
-                  PrimarySource: SourceCode
-                  EnvironmentVariables: "[
-                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}]"
-                InputArtifacts:
-                  - Name: SourceCode
-                RunOrder: 3
-
-          - !Ref AWS::NoValue
-
-        - !If # Production deployment post Manual approval
-          - IsMasterBranch
-          - Name: Production-Deployment
-            Actions:
-              - Name: MANUAL-APPROVAL
-                ActionTypeId:
-                  Category: Approval
-                  Owner: AWS
-                  Provider: Manual
-                  Version: '1'
-                Configuration:
-                  NotificationArn: !Ref ManualApprovalSNSTopic
-                  CustomData: !Sub "Approval Request For ${ApplicationName} Deployment In Prod Environment."
-                RunOrder: 1
-
-              - Name: DEPLOY
-                ActionTypeId:
-                  Category: Build
-                  Owner: AWS
-                  Provider: CodeBuild
-                  Version: '1'
-                Configuration:
-                  ProjectName: !Ref CodeBuildDeploy
-                  PrimarySource: SourceCode
-                  EnvironmentVariables: "[
-                    {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
-                    {\"name\":\"WORKLOAD_ENV\",\"value\":\"prod\",\"type\":\"PLAINTEXT\"}
-                  ]"
-                InputArtifacts:
-                  - Name: SourceCode
-                RunOrder: 2
-          - !Ref AWS::NoValue
+            - Name: DEPLOY
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildDeploy
+                PrimarySource: SourceCode
+                EnvironmentVariables: "[
+                  {\"name\":\"AMI_ID\",\"value\":\"#{BuildVariables.AMI_ID}\",\"type\":\"PLAINTEXT\"}, \
+                  {\"name\":\"WORKLOAD_ENV\",\"value\":\"prod\",\"type\":\"PLAINTEXT\"}
+                ]"
+              InputArtifacts:
+                - Name: SourceCode
+              RunOrder: 2
 
 
 Outputs:

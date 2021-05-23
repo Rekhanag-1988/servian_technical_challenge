@@ -1,0 +1,7 @@
+---
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - echo "Hello! I will be running application test-suites"

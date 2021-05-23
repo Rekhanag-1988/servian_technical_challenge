@@ -1,0 +1,28 @@
+---
+version: 0.2
+
+env:
+  secrets-manager:
+    DB_PASSWORD: /Servian-Tech-Challenge/dev/database/master:password
+    DB_HOST: /Servian-Tech-Challenge/dev/database/master:host
+    DB_NAME: /Servian-Tech-Challenge/dev/database/master:dbname
+  exported-variables:
+    - AMI_ID
+
+phases:
+  install:
+    commands:
+      - echo "Installing HashiCorp Packer ..."
+      - cd infra/buildspecs/
+      - chmod 755 scripts/*
+      - curl -o packer.zip https://releases.hashicorp.com/packer/1.5.4/packer_1.5.4_linux_amd64.zip && unzip packer.zip
+  build:
+    commands:
+       - |
+          if [ "${BRANCH}" == "master" ]; then
+            echo "Pulling tested AMI_ID from ParameterStore."
+            AMI_ID=$(aws ssm get-parameter --name "SERVIAN-TECH-CHALLENGE-TESTED-AMI" --query "Parameter.Value" --output text)
+          else
+            ./scripts/ami-builder.sh
+            source ./ami_id
+          fi

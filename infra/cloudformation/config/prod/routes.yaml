@@ -6,5 +6,5 @@ parameters:
   Environment: '{{ var.environment }}'
 
 dependencies:
-  - 'dev/subnets.yaml'
-  - 'dev/security-groups.yaml'
+  - 'prod/subnets.yaml'
+  - 'prod/security-groups.yaml'

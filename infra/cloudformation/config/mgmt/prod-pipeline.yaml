@@ -1,0 +1,6 @@
+---
+stack_name: {{ 'codepipeline-prod-' + var.environment }}
+template_path: mgmt/prod-pipeline.yaml
+
+dependencies:
+  - 'mgmt/vpc.yaml'
