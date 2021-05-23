@@ -19,7 +19,7 @@ phases:
   build:
     commands:
        - |
-          if [ "${BRANCH}" == "master" ]; then
+          if [ "${SOURCE_REPO_BRANCH}" == "master" ]; then
             echo "Pulling tested AMI_ID from ParameterStore."
             AMI_ID=$(aws ssm get-parameter --name "SERVIAN-TECH-CHALLENGE-TESTED-AMI" --query "Parameter.Value" --output text)
           else
