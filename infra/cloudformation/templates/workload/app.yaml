@@ -126,6 +126,7 @@ Resources:
           Ebs:
             VolumeSize: !Ref ClusterNodeVolumeSize
             Encrypted: true
+            DeleteOnTermination: true
         - DeviceName: /dev/xvdf
           NoDevice: true
       IamInstanceProfile: !Ref AppClusterNodeInstanceProfile

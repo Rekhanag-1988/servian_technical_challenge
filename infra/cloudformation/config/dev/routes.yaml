@@ -2,7 +2,6 @@
 stack_name: {{ 'routes-' + var.environment }}
 template_path: workload/routes.yaml
 
-
 parameters:
   Environment: '{{ var.environment }}'
 

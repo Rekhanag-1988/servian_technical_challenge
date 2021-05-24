@@ -9,6 +9,7 @@ parameters:
   DbName: '{{ var.db_name }}'
   DbPassword: '{{ var.db_password }}'
   DbHost: '{{ var.db_host }}'
+  NodeType: 'Multiple'
 
 dependencies:
   - 'prod/load-balancer.yaml'
