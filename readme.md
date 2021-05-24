@@ -25,3 +25,9 @@ DEV: http://alb-d-LoadB-1CS3UIVH2WU0M-2092728165.ap-southeast-2.elb.amazonaws.co
 PROD: http://alb-p-LoadB-MJLVA2S0A8H7-926933410.ap-southeast-2.elb.amazonaws.com/
 
 Deployment will not be having any downtime to the application
+
+## DEMOS
+
+![Initial-Infra-Set-Up](infra/infra-setup.mp4)
+
+![Pipeline-Deployments](infra/pipelines.mp4)
