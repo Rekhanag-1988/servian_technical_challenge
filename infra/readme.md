@@ -1,7 +1,7 @@
 
 ### Solution Design Diagrams
 
-[diagrams](diagrams) holds the basic high level solution design. These are hand scribled, sorry for that as I dint get time to use as AWS Icons.
+[diagrams](diagrams) holds the basic high level solution design. These are hand scribled, sorry for that as I dint get time to use AWS Icons.
 
 
 ## Infra Directory structure
@@ -16,13 +16,13 @@
 	* envvars: environment specific variables
 	* templates: actual cloudformation templates.
 
-## Operation Modle
+## Operation Model
 
 We have mgmt or CICD VPC which does all the work for dev/prod workload-vpc's deployment. Actually we can have one in each AWS account as its a overhead for this demo have kept them on in each VPC.
 
-Dev-Codepipeline:
-	* This pipeline will run for every commit do on the development branch. Build-->deploy(dev)-->test-->release-ami
-Prod-Codepipeline:
+Dev-Codepipeline:\
+	* This pipeline will run for every commit do on the development branch. Build-->deploy(dev)-->test-->release-ami\
+Prod-Codepipeline:\
 	* Once you merge to master, this will be kicked off. Get-Ami-->manual-approvl-->deploy(prod)
 
 For every commit complete infra will be updated, if there are no changes nothing will be done.
